@@ -1,0 +1,6 @@
+# possible keys documented here (under Parameters):
+# https://magicstack.github.io/asyncpg/current/api/index.html#asyncpg.connection.connect
+[database]
+
+[tokens]
+discord = '...'
