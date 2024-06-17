@@ -184,11 +184,17 @@ class ResultsButton(
 
 	@classmethod
 	def format_results(cls, results):
+		"""
+		>>> list(format_results([['Lenin', 'Stalin'], ['Mao']]))
+		[r'1\. Lenin', r'1\. Stalin', r'3\. Mao']
+		"""
+		i = 1
 		rank = 1
 		for l in results:
 			for candidate in l:
+				i += 1
 				yield fr'{rank}\. {candidate}'
-			rank += 1
+			rank = i
 
 class FinalizeButton(
 	discord.ui.DynamicItem[discord.ui.Button],
