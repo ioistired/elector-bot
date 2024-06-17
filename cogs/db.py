@@ -1,7 +1,7 @@
-import json
 import discord
 import asyncpg
 from discord.ext import commands
+from schulze import compute_ranks
 
 class Database(commands.Cog):
 	def __init__(self, bot):
@@ -27,6 +27,18 @@ class Database(commands.Cog):
 
 	async def check_if_voted(self, *, election_id: int, user_id: int):
 		return await self.bot.pool.fetchval(self.queries.check_if_voted(), user_id, election_id)
+
+	async def get_ballots(self, election_id):
+		return await self.bot.pool.fetch(self.queries.get_ballots(), election_id)
+
+	async def get_results(self, election_id):
+		ballots = [
+			(record['ballot'], record['weight'])
+			for record
+			in await self.get_ballots(election_id)
+		]
+		candidate_names = await self.get_candidate_names(election_id)
+		return compute_ranks(candidate_names, ballots)
 
 async def setup(bot):
 	await bot.add_cog(Database(bot))

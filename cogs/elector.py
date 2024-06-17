@@ -1,6 +1,7 @@
 import re
 import string
 import discord
+from typing import Optional
 from discord import app_commands
 from discord.ext import commands
 
@@ -58,21 +59,30 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 		max_length=2000,
 	)
 
-	def __init__(self, cog, title):
+	def __init__(self, cog, election_title):
 		super().__init__()
 		self.cog = cog
-		self.title = title
+		self.election_title = election_title
 
 	async def on_submit(self, interaction):
 		assert interaction.guild_id is not None
 		self.text = str(self.options)
 		candidates = self.text.splitlines()
 
-		election_id = await self.cog.db.create_election(interaction.guild_id, interaction.user.id, candidates)
+		election_id = await self.cog.db.create_election(
+			guild_id=interaction.guild_id,
+			creator_id=interaction.user.id,
+			candidate_names=candidates,
+		)
 
 		view = discord.ui.View(timeout=None)
 		view.add_item(VoteButton(election_id))
-		text = f'# {self.title}\n{"\n".join(prefixed(candidates))}'
+		view.add_item(ResultsButton(election_id))
+		options = '\n'.join(prefixed(candidates))
+		if self.election_title is not None:
+			text = f'# {self.election_title}\n{options}'
+		else:
+			text = options
 
 		await interaction.response.send_message(text, view=view)
 
@@ -85,10 +95,11 @@ class BallotModal(discord.ui.Modal, title='Vote on an election'):
 		max_length=2000,
 	)
 
-	def __init__(self, db, election_id):
+	def __init__(self, db, election_id, text):
 		super().__init__()
 		self.db = db
 		self.election_id = election_id
+		self.ballot.default = text
 
 	async def on_submit(self, interaction):
 		self.interaction = interaction
@@ -122,11 +133,48 @@ class VoteButton(
 		return cls(int(match[1]))
 
 	async def callback(self, interaction):
-		db = interaction.client.get_cog('Database')
+		db = interaction.client.cogs['Database']
 		if await db.check_if_voted(user_id=interaction.user.id, election_id=self.election_id):
 			await interaction.response.send_message('You have already voted on that election.', ephemeral=True)
 		else:
-			await interaction.response.send_modal(BallotModal(db, self.election_id))
+			await interaction.response.send_modal(BallotModal(db, self.election_id, interaction.message.content))
+
+class ResultsButton(
+	discord.ui.DynamicItem[discord.ui.Button],
+	template=r'results:(\d+)',
+):
+	def __init__(self, election_id):
+		self.election_id = election_id
+		super().__init__(discord.ui.Button(
+			label='See results',
+			style=discord.ButtonStyle.primary,
+			custom_id=f'results:{election_id}',
+			emoji='🥇',
+		))
+
+	@classmethod
+	async def from_custom_id(cls, interaction, item, match: re.Match[str]):
+		return cls(int(match[1]))
+
+	async def callback(self, interaction):
+		db = interaction.client.cogs['Database']
+		if not await db.check_if_voted(user_id=interaction.user.id, election_id=self.election_id):
+			await interaction.response.send_message(
+				'To prevent strategic voting, you may only see results on elections *after* voting on them.',
+				ephemeral=True,
+			)
+			return
+
+		results = await db.get_results(self.election_id)
+		await interaction.response.send_message('\n'.join(self.format_results(results)), ephemeral=True)
+
+	@classmethod
+	def format_results(cls, results):
+		rank = 1
+		for l in results:
+			for candidate in l:
+				yield f'{rank}\\. {candidate}'
+			rank += 1
 
 class Elector(commands.Cog):
 	def __init__(self, bot):
@@ -135,9 +183,10 @@ class Elector(commands.Cog):
 
 	async def cog_load(self):
 		self.bot.add_dynamic_items(VoteButton)
+		self.bot.add_dynamic_items(ResultsButton)
 
 	@app_commands.command()
-	async def election(self, interaction, title: str):
+	async def election(self, interaction, title: Optional[str] = None):
 		modal = ElectionCreateModal(self, title)
 		await interaction.response.send_modal(modal)
 
