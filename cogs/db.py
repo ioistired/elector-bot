@@ -37,6 +37,8 @@ class Database(commands.Cog):
 			for record
 			in await self.get_ballots(election_id)
 		]
+		if not ballots:
+			return []
 		candidate_names = await self.get_candidate_names(election_id)
 		return compute_ranks(candidate_names, ballots)
 

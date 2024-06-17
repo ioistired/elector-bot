@@ -77,7 +77,8 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 
 		view = discord.ui.View(timeout=None)
 		view.add_item(VoteButton(election_id))
-		view.add_item(ResultsButton(election_id))
+		view.add_item(ResultsButton(election_id, finalized=False))
+		view.add_item(FinalizeButton(election_id))
 
 		options = '\n'.join(prefixed(candidates))
 		if self.election_title is not None:
@@ -148,24 +149,30 @@ class VoteButton(
 
 class ResultsButton(
 	discord.ui.DynamicItem[discord.ui.Button],
-	template=r'results:(\d+)',
+	template=r'results:(\d+):finalized:([01])',
 ):
-	def __init__(self, election_id):
+	def __init__(self, election_id, *, finalized: bool):
 		self.election_id = election_id
+		self.finalized = finalized
 		super().__init__(discord.ui.Button(
 			label='See results',
 			style=discord.ButtonStyle.primary,
-			custom_id=f'results:{election_id}',
+			custom_id=f'results:{election_id}:finalized:{int(finalized)}',
 			emoji='🥇',
 		))
 
 	@classmethod
 	async def from_custom_id(cls, interaction, item, match: re.Match[str]):
-		return cls(int(match[1]))
+		return cls(int(match[1]), finalized=match[2] == '1')
 
 	async def callback(self, interaction):
 		db = interaction.client.cogs['Database']
-		if not await db.check_if_voted(user_id=interaction.user.id, election_id=self.election_id):
+		results = await db.get_results(self.election_id)
+		if self.finalized and not results:
+			await interaction.response.send_message('🦗 Bummer… nobody voted on this election.')
+			return
+
+		if not self.finalized and not await db.check_if_voted(user_id=interaction.user.id, election_id=self.election_id):
 			await interaction.response.send_message(
 				'To prevent strategic voting, you may only see results on elections *after* voting on them.',
 				ephemeral=True,
@@ -173,15 +180,47 @@ class ResultsButton(
 			return
 
 		results = await db.get_results(self.election_id)
-		await interaction.response.send_message('\n'.join(self.format_results(results)), ephemeral=True)
+		await interaction.response.send_message('\n'.join(self.format_results(results)), ephemeral=not self.finalized)
 
 	@classmethod
 	def format_results(cls, results):
 		rank = 1
 		for l in results:
 			for candidate in l:
-				yield f'{rank}\\. {candidate}'
+				yield fr'{rank}\. {candidate}'
 			rank += 1
+
+class FinalizeButton(
+	discord.ui.DynamicItem[discord.ui.Button],
+	template=r'finalize:(\d+)',
+):
+	def __init__(self, election_id):
+		self.election_id = election_id
+		super().__init__(discord.ui.Button(
+			label='Finalize election',
+			style=discord.ButtonStyle.primary,
+			custom_id=f'finalize:{election_id}',
+			emoji='✅',
+		))
+
+	@classmethod
+	async def from_custom_id(cls, interaction, item, match: re.Match[str]):
+		return cls(int(match[1]))
+
+	async def callback(self, interaction):
+		if (
+			interaction.message.interaction_metadata.user != interaction.user
+			and not interaction.channel.permissions_for(interaction.user).manage_messages
+		):
+			await interaction.response.send_message(
+				'You must have created the election or have Manage Messages permissions to close an election.',
+				ephemeral=True,
+			)
+			return
+
+		view = discord.ui.View(timeout=None)
+		view.add_item(ResultsButton(self.election_id, finalized=True))
+		await interaction.message.edit(view=view)
 
 class Elector(commands.Cog):
 	def __init__(self, bot):
@@ -189,8 +228,7 @@ class Elector(commands.Cog):
 		self.db = bot.cogs['Database']
 
 	async def cog_load(self):
-		self.bot.add_dynamic_items(VoteButton)
-		self.bot.add_dynamic_items(ResultsButton)
+		self.bot.add_dynamic_items(VoteButton, ResultsButton, FinalizeButton)
 
 	@app_commands.command()
 	async def election(self, interaction, title: Optional[str] = None):
