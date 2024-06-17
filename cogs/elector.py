@@ -109,7 +109,7 @@ class BallotModal(discord.ui.Modal, title='Vote on an election'):
 
 		candidate_names = await self.db.get_candidate_names(self.election_id)
 		candidates = [
-			[prefix_to_candidate_name(candidate_names, line.partition(')')[0])]
+			[prefix_to_candidate_name(candidate_names, line.partition(')')[0].strip())]
 			for line
 			in self.text.upper().splitlines()
 		]
