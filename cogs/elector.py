@@ -184,9 +184,9 @@ class ResultsButton(
 
 	@classmethod
 	def format_results(cls, results):
-		"""
-		>>> list(format_results([['Lenin', 'Stalin'], ['Mao']]))
-		[r'1\. Lenin', r'1\. Stalin', r'3\. Mao']
+		r"""
+		>>> list(ResultsButton.format_results([['Lenin', 'Stalin'], ['Mao']]))
+		['1\\. Lenin', '1\\. Stalin', '3\\. Mao']
 		"""
 		i = 1
 		rank = 1
