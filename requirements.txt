@@ -1,6 +1,6 @@
 jishaku @ git+https://github.com/Gorialis/jishaku.git
-discord.py >= 2.3.2, < 3.0.0
+discord.py @ git+https://github.com/Rapptz/discord.py.git
 jinja2
 asyncpg
 qtoml
-bot_bin[sql]
+bot_bin[sql] >= 2.0.2, < 3.0.0
