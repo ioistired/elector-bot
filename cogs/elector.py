@@ -78,6 +78,7 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 		view = discord.ui.View(timeout=None)
 		view.add_item(VoteButton(election_id))
 		view.add_item(ResultsButton(election_id))
+
 		options = '\n'.join(prefixed(candidates))
 		if self.election_title is not None:
 			text = f'# {self.election_title}\n{options}'
@@ -137,7 +138,13 @@ class VoteButton(
 		if await db.check_if_voted(user_id=interaction.user.id, election_id=self.election_id):
 			await interaction.response.send_message('You have already voted on that election.', ephemeral=True)
 		else:
-			await interaction.response.send_modal(BallotModal(db, self.election_id, interaction.message.content))
+			default = interaction.message.content
+			# get rid of the title if necessary
+			# this is faster than querying the db for the candidate names and formatting them anew
+			if default.startswith('# '):
+				default = '\n'.join(default.splitlines()[1:])
+
+			await interaction.response.send_modal(BallotModal(db, self.election_id, default))
 
 class ResultsButton(
 	discord.ui.DynamicItem[discord.ui.Button],
