@@ -1,11 +1,11 @@
 -- :macro create_election()
-INSERT INTO elections (guild_id, creator_id, candidate_names)
-VALUES ($1, $2, $3)
+INSERT INTO elections (guild_id, creator_id, title, candidate_names)
+VALUES ($1, $2, $3, $4)
 RETURNING election_id
 -- :endmacro
 
--- :macro get_candidate_names()
-SELECT candidate_names
+-- :macro get_election()
+SELECT title, candidate_names
 FROM elections
 WHERE election_id = $1
 -- :endmacro

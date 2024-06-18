@@ -1,9 +1,10 @@
 import re
 import string
 import discord
-from typing import Optional
+from random import shuffle
 from discord import app_commands
 from discord.ext import commands
+from typing import Optional
 
 # xl_column_name is modified from https://github.com/jmcnamara/XlsxWriter/blob/172211873cd2fabe67876722a523b9bf9771d613/xlsxwriter/utility.py#L174-L211
 # SPDX-License-Identifier: BSD-2-Clause
@@ -73,6 +74,7 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 			guild_id=interaction.guild_id,
 			creator_id=interaction.user.id,
 			candidate_names=candidates,
+			title=self.election_title,
 		)
 
 		view = discord.ui.View(timeout=None)
@@ -97,20 +99,22 @@ class BallotModal(discord.ui.Modal, title='Vote on an election'):
 		max_length=2000,
 	)
 
-	def __init__(self, db, election_id, text):
+	def __init__(self, db, election_id, text, election_title=None):
 		super().__init__()
 		self.db = db
 		self.election_id = election_id
 		self.ballot.default = text
+		if election_title:
+			self.title = f'Vote on “{election_title}”'
 
 	async def on_submit(self, interaction):
 		self.interaction = interaction
 		assert interaction.guild_id is not None
 		self.text = str(self.ballot)
 
-		candidate_names = await self.db.get_candidate_names(self.election_id)
+		election = await self.db.get_election(self.election_id)
 		candidates = [
-			[prefix_to_candidate_name(candidate_names, line.partition(')')[0].strip())]
+			[prefix_to_candidate_name(election['candidate_names'], line.partition(')')[0].strip())]
 			for line
 			in self.text.upper().splitlines()
 		]
@@ -138,14 +142,16 @@ class VoteButton(
 		db = interaction.client.cogs['Database']
 		if await db.check_if_voted(user_id=interaction.user.id, election_id=self.election_id):
 			await interaction.response.send_message('You have already voted on that election.', ephemeral=True)
-		else:
-			default = interaction.message.content
-			# get rid of the title if necessary
-			# this is faster than querying the db for the candidate names and formatting them anew
-			if default.startswith('# '):
-				default = '\n'.join(default.splitlines()[1:])
+			return
 
-			await interaction.response.send_modal(BallotModal(db, self.election_id, default))
+		election = await interaction.client.cogs['Database'].get_election(self.election_id)
+		default = list(prefixed(election['candidate_names']))
+		# shuffle the candidates to better indicate to the user that they can
+		# vote in any order
+		while sorted(default) == default:
+			shuffle(default)
+
+		await interaction.response.send_modal(BallotModal(db, self.election_id, '\n'.join(default), election['title']))
 
 class ResultsButton(
 	discord.ui.DynamicItem[discord.ui.Button],
@@ -167,7 +173,9 @@ class ResultsButton(
 
 	async def callback(self, interaction):
 		db = interaction.client.cogs['Database']
+		election = await db.get_election(self.election_id)
 		results = await db.get_results(self.election_id)
+
 		if self.finalized and not results:
 			await interaction.response.send_message('🦗 Bummer… nobody voted on this election.')
 			return
@@ -179,15 +187,17 @@ class ResultsButton(
 			)
 			return
 
-		results = await db.get_results(self.election_id)
-		await interaction.response.send_message('\n'.join(self.format_results(results)), ephemeral=not self.finalized)
+		await interaction.response.send_message('\n'.join(self.format_results(results, election['title'])), ephemeral=not self.finalized)
 
 	@classmethod
-	def format_results(cls, results):
+	def format_results(cls, results, title=None):
 		r"""
 		>>> list(ResultsButton.format_results([['Lenin', 'Stalin'], ['Mao']]))
 		['1\\. Lenin', '1\\. Stalin', '3\\. Mao']
 		"""
+		if title:
+			yield f'# {title}'
+
 		i = 1
 		rank = 1
 		for l in results:
