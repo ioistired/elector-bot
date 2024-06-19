@@ -51,6 +51,10 @@ def prefix_to_candidate_name(candidates: list[str], prefix: str):
 			return c
 	raise ValueError('Prefix not found in the candidate list')
 
+def parse_election_title(msg: str):
+	msg = msg.partition('\n')[0]
+	return msg.removeprefix('# ') if msg.startswith('# ') else None
+
 class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 	options = discord.ui.TextInput(
 		label='Candidates, one per line',
@@ -151,7 +155,7 @@ class VoteButton(
 		while sorted(default) == default:
 			shuffle(default)
 
-		await interaction.response.send_modal(BallotModal(db, self.election_id, '\n'.join(default), election['title']))
+		await interaction.response.send_modal(BallotModal(db, self.election_id, '\n'.join(default), parse_election_title(interaction.message.content)))
 
 class ResultsButton(
 	discord.ui.DynamicItem[discord.ui.Button],
@@ -187,7 +191,7 @@ class ResultsButton(
 			)
 			return
 
-		await interaction.response.send_message('\n'.join(self.format_results(results, election['title'])), ephemeral=not self.finalized)
+		await interaction.response.send_message('\n'.join(self.format_results(results, parse_election_title(interaction.message.content))), ephemeral=not self.finalized)
 
 	@classmethod
 	def format_results(cls, results, title=None):

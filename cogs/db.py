@@ -14,7 +14,6 @@ class Database(commands.Cog):
 			self.queries.create_election(),
 			guild_id,
 			creator_id,
-			title,
 			candidate_names,
 		)
 
