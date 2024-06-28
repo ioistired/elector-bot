@@ -1,6 +1,7 @@
 import re
 import string
 import discord
+import itertools
 from random import shuffle
 from discord import app_commands
 from discord.ext import commands
@@ -41,19 +42,16 @@ def prefixed(candidates: list[str]):
 		if candidate:
 			yield f'{xl_column_name(i)}) {candidate}'
 
-def prefix_to_candidate_name(candidates: list[str], prefix: str):
-	"""
-	>>> prefix_to_candidate_name(['Lenin', 'Stalin', 'Mao'], 'C')
-	'Mao'
-	"""
-	for i, c in enumerate(candidates):
+def prefix_to_candidate_idx(prefix: str):
+	for i in itertools.count():
 		if xl_column_name(i) == prefix:
-			return c
-	raise ValueError('Prefix not found in the candidate list')
+			return i
 
-def parse_election_title(msg: str):
-	msg = msg.partition('\n')[0]
-	return msg.removeprefix('# ') if msg.startswith('# ') else None
+def parse_election_message(msg: str):
+	lines = msg.splitlines()
+	title = lines[0].removeprefix('# ') if lines[0].startswith('# ') else None
+	candidate_names = [line.partition(') ')[-1] for line in lines[1 if title else 0:]]
+	return title, candidate_names
 
 class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 	options = discord.ui.TextInput(
@@ -77,8 +75,6 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 		election_id = await self.cog.db.create_election(
 			guild_id=interaction.guild_id,
 			creator_id=interaction.user.id,
-			candidate_names=candidates,
-			title=self.election_title,
 		)
 
 		view = discord.ui.View(timeout=None)
@@ -116,12 +112,16 @@ class BallotModal(discord.ui.Modal, title='Vote on an election'):
 		assert interaction.guild_id is not None
 		self.text = str(self.ballot)
 
-		election = await self.db.get_election(self.election_id)
-		candidates = [
-			[prefix_to_candidate_name(election['candidate_names'], line.partition(')')[0].strip())]
-			for line
-			in self.text.upper().splitlines()
-		]
+		title, candidate_names = parse_election_message(interaction.message.content)
+		candidates = []
+		for line in self.text.upper().splitlines():
+			prefix = line.partition(')')[0].strip()
+			if len(prefix) > 3 or (i := prefix_to_candidate_idx(prefix)) >= len(candidate_names):
+				await interaction.response.send_message(f'Invalid candidate index {prefix}', ephemeral=True)
+				return
+			# currently ties are not supported in ballots,
+			# so we just wrap every candidate in a list of length 1
+			candidates.append([i])
 		await self.db.submit_ballot(election_id=self.election_id, user_id=interaction.user.id, ballot=candidates)
 		await interaction.response.send_message('Thanks for voting!', ephemeral=True)
 
@@ -148,14 +148,14 @@ class VoteButton(
 			await interaction.response.send_message('You have already voted on that election.', ephemeral=True)
 			return
 
-		election = await interaction.client.cogs['Database'].get_election(self.election_id)
-		default = list(prefixed(election['candidate_names']))
+		title, candidate_names = parse_election_message(interaction.message.content)
+		default = list(prefixed(candidate_names))
 		# shuffle the candidates to better indicate to the user that they can
 		# vote in any order
 		while sorted(default) == default:
 			shuffle(default)
 
-		await interaction.response.send_modal(BallotModal(db, self.election_id, '\n'.join(default), parse_election_title(interaction.message.content)))
+		await interaction.response.send_modal(BallotModal(db, self.election_id, '\n'.join(default), title))
 
 class ResultsButton(
 	discord.ui.DynamicItem[discord.ui.Button],
@@ -177,8 +177,10 @@ class ResultsButton(
 
 	async def callback(self, interaction):
 		db = interaction.client.cogs['Database']
-		election = await db.get_election(self.election_id)
-		results = await db.get_results(self.election_id)
+		title, candidate_names = parse_election_message(interaction.message.content)
+		results = await db.get_results(
+			election_id=self.election_id, candidate_names=candidate_names,
+		)
 
 		if self.finalized and not results:
 			await interaction.response.send_message('🦗 Bummer… nobody voted on this election.')
@@ -191,7 +193,7 @@ class ResultsButton(
 			)
 			return
 
-		await interaction.response.send_message('\n'.join(self.format_results(results, parse_election_title(interaction.message.content))), ephemeral=not self.finalized)
+		await interaction.response.send_message('\n'.join(self.format_results(results, title)), ephemeral=not self.finalized)
 
 	@classmethod
 	def format_results(cls, results, title=None):
@@ -204,8 +206,8 @@ class ResultsButton(
 
 		i = 1
 		rank = 1
-		for l in results:
-			for candidate in l:
+		for tied_candidates in results:
+			for candidate in tied_candidates:
 				i += 1
 				yield fr'{rank}\. {candidate}'
 			rank = i
