@@ -72,6 +72,10 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 		self.text = str(self.options)
 		candidates = self.text.splitlines()
 
+		if len(candidates) == 1:
+			await interaction.response.send_message('You must have more than one candidate in an election.', ephemeral=True)
+			return
+
 		election_id = await self.cog.db.create_election(
 			guild_id=interaction.guild_id,
 			creator_id=interaction.user.id,
