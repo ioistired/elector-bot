@@ -1,5 +1,5 @@
 jishaku @ git+https://github.com/Gorialis/jishaku.git
-discord.py @ git+https://github.com/Rapptz/discord.py.git
+discord.py >=2.4.0, <3.0.0
 jinja2
 asyncpg
 qtoml
