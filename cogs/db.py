@@ -23,7 +23,7 @@ class Database(commands.Cog):
 			raise commands.UserInputError('You have already voted in this election.')
 
 	async def check_if_voted(self, *, election_id: int, user_id: int):
-		return await self.bot.pool.fetchval(self.queries.check_if_voted(), user_id, election_id)
+		return bool(await self.bot.pool.fetchval(self.queries.check_if_voted(), user_id, election_id))
 
 	async def get_ballots(self, election_id):
 		return await self.bot.pool.fetch(self.queries.get_ballots(), election_id)
