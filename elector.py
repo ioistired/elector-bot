@@ -20,6 +20,7 @@ class Elector(bot_bin.bot.Bot):
 		'bot_bin.misc',
 		'bot_bin.debug',
 		'bot_bin.sql',
+		'bot_bin.systemd',
 		'cogs.db',
 		'cogs.elector',
 	]
