@@ -1,3 +1,6 @@
+support_server_invite_code = ''
+repo = 'https://github.com/ioistired/elector-bot'
+
 # possible keys documented here (under Parameters):
 # https://magicstack.github.io/asyncpg/current/api/index.html#asyncpg.connection.connect
 [database]
