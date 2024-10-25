@@ -53,6 +53,26 @@ def parse_election_message(msg: str):
 	candidate_names = [line.partition(') ')[-1] for line in lines[1 if title else 0:]]
 	return title, candidate_names
 
+async def create_election(*, db, interaction, text):
+	assert interaction.guild_id is not None
+	candidates = text.splitlines()
+	if len(candidates) == 1:
+		await interaction.response.send_message('You must have more than one candidate in an election.', ephemeral=True)
+		return
+
+	election_id = await db.create_election(
+		guild_id=interaction.guild_id,
+		creator_id=interaction.user.id,
+	)
+
+	view = discord.ui.View(timeout=None)
+	view.add_item(VoteButton(election_id))
+	view.add_item(ResultsButton(election_id, finalized=False))
+	view.add_item(FinalizeButton(election_id))
+
+	options = '\n'.join(prefixed(candidates))
+	await interaction.response.send_message('\n'.join(prefixed(candidates)), view=view)
+
 class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 	options = discord.ui.TextInput(
 		label='Candidates, one per line',
@@ -62,37 +82,13 @@ class ElectionCreateModal(discord.ui.Modal, title='Create new election'):
 		max_length=2000,
 	)
 
-	def __init__(self, cog, election_title):
+	def __init__(self, cog, election_title=None):
 		super().__init__()
 		self.cog = cog
 		self.election_title = election_title
 
 	async def on_submit(self, interaction):
-		assert interaction.guild_id is not None
-		self.text = str(self.options)
-		candidates = self.text.splitlines()
-
-		if len(candidates) == 1:
-			await interaction.response.send_message('You must have more than one candidate in an election.', ephemeral=True)
-			return
-
-		election_id = await self.cog.db.create_election(
-			guild_id=interaction.guild_id,
-			creator_id=interaction.user.id,
-		)
-
-		view = discord.ui.View(timeout=None)
-		view.add_item(VoteButton(election_id))
-		view.add_item(ResultsButton(election_id, finalized=False))
-		view.add_item(FinalizeButton(election_id))
-
-		options = '\n'.join(prefixed(candidates))
-		if self.election_title is not None:
-			text = f'# {self.election_title}\n{options}'
-		else:
-			text = options
-
-		await interaction.response.send_message(text, view=view)
+		await create_election(db=self.cog.db, interaction=interaction, text=str(self.options))
 
 class BallotModal(discord.ui.Modal, title='Vote on an election'):
 	ballot = discord.ui.TextInput(
@@ -252,14 +248,32 @@ class Elector(commands.Cog):
 	def __init__(self, bot):
 		self.bot = bot
 		self.db = bot.cogs['Database']
+		self.setup_ctx_menu()
+
+	async def cog_unload(self):
+		self.teardown_ctx_menu()
 
 	async def cog_load(self):
 		self.bot.add_dynamic_items(VoteButton, ResultsButton, FinalizeButton)
+
+	def setup_ctx_menu(self):
+		self.ctx_menu = app_commands.ContextMenu(
+			name='Create election',
+			callback=self.create_election_ctx_menu,
+		)
+		self.bot.tree.add_command(self.ctx_menu)
+
+	def teardown_ctx_menu(self):
+		self.bot.tree.remove_command(self.ctx_menu.name, type=self.ctx_menu.type)
 
 	@app_commands.command()
 	async def election(self, interaction, title: Optional[str] = None):
 		modal = ElectionCreateModal(self, title)
 		await interaction.response.send_modal(modal)
+
+	@app_commands.user_install()
+	async def create_election_ctx_menu(self, interaction, message: discord.Message):
+		await create_election(db=self.db, interaction=interaction, text=message.content)
 
 async def setup(bot):
 	await bot.add_cog(Elector(bot))
