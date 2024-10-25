@@ -35,8 +35,8 @@ class Database(commands.Cog):
 			in await self.get_ballots(election_id)
 		]
 		if not ballots:
-			return []
-		return compute_ranks(candidate_names, ballots)
+			return 0, []
+		return len(ballots), compute_ranks(candidate_names, ballots)
 
 	@classmethod
 	def transform_ballot(cls, candidate_names, ballot):

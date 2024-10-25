@@ -178,7 +178,7 @@ class ResultsButton(
 	async def callback(self, interaction):
 		db = interaction.client.cogs['Database']
 		title, candidate_names = parse_election_message(interaction.message.content)
-		results = await db.get_results(
+		num_ballots, results = await db.get_results(
 			election_id=self.election_id, candidate_names=candidate_names,
 		)
 
@@ -193,16 +193,21 @@ class ResultsButton(
 			)
 			return
 
-		await interaction.response.send_message('\n'.join(self.format_results(results, title)), ephemeral=not self.finalized)
+		await interaction.response.send_message('\n'.join(self.format_results(num_ballots, results, title)), ephemeral=not self.finalized)
 
 	@classmethod
-	def format_results(cls, results, title=None):
+	def format_results(cls, num_ballots, results, title=None):
 		r"""
 		>>> list(ResultsButton.format_results([['Lenin', 'Stalin'], ['Mao']]))
 		['1\\. Lenin', '1\\. Stalin', '3\\. Mao']
 		"""
 		if title:
 			yield f'# {title}'
+
+		if num_ballots == 1:
+			yield f'**1** person voted.'
+		else:
+			yield f'**{num_ballots}** people voted.'
 
 		i = 1
 		rank = 1
